@@ -1,0 +1,1231 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Commerce agentique — quand votre IA passe à la caisse</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;800;900&family=Inter:wght@300;400;500;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+<style>/* ── Tokens SFEIR ──────────────────────────────────────────────
+   Mappe la palette SFEIR (theme/styles/index.css) vers les variables
+   neutres consommées par components.css. Changer de thème = changer
+   ce seul fichier (cf. tokens-auchan.css). */
+:root {
+  --font-head: 'Montserrat', system-ui, -apple-system, sans-serif;
+  --font-body: 'Inter', -apple-system, system-ui, sans-serif;
+
+  /* Marque */
+  --primary: #282A7A;        /* bleu SFEIR */
+  --primary-dark: #1d1f5c;
+  --primary-2: #1a9e96;      /* teal secondaire */
+  --accent: #b8924a;         /* or */
+
+  /* Dégradés signature */
+  --title-grad: linear-gradient(135deg, #282A7A 0%, #1a9e96 100%);
+  --bar-grad: linear-gradient(90deg, #282A7A, #1a9e96);
+  --cover-grad: linear-gradient(135deg, #FFFFFF 0%, #EFF8FA 55%, #F5F1E8 100%);
+  --chapter-grad: linear-gradient(135deg, #282A7A 0%, #1a9e96 100%);
+  --halo-1: rgba(40, 42, 122, 0.10);
+  --halo-2: rgba(26, 158, 150, 0.10);
+
+  /* Surfaces */
+  --text: #1a1a2e;
+  --text-secondary: #4E5965;
+  --text-muted: #94A3B8;
+  --bg: #F7FAFB;
+  --bg-card: #FFFFFF;
+  --bg-secondary: #EFF8FA;
+  --border: #E2E8F0;
+}
+
+
+/* ── Base : reset, moteur de slide, chrome ─────────────────────
+   Indépendant du thème. Les couleurs sémantiques (cartes, tags) sont
+   universelles et vivent ici ; seules les couleurs de marque sont
+   dans tokens-*.css. */
+:root {
+  --c-primary: var(--primary);  --c-primary-soft: color-mix(in srgb, var(--primary) 10%, transparent);
+  --c-red: #EF4444;    --c-red-soft: rgba(239, 68, 68, 0.10);
+  --c-orange: #F59E0B; --c-orange-soft: rgba(245, 158, 11, 0.12);
+  --c-green: #10B981;  --c-green-soft: rgba(16, 185, 129, 0.10);
+  --c-teal: #14B8A6;   --c-teal-soft: rgba(20, 184, 166, 0.12);
+  --c-blue: #3B82F6;   --c-blue-soft: rgba(59, 130, 246, 0.10);
+  --c-purple: #8B5CF6; --c-purple-soft: rgba(139, 92, 246, 0.12);
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: var(--font-body);
+  background: var(--bg);
+  color: var(--text);
+  overflow: hidden;
+  height: 100vh;
+  width: 100vw;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── Deck & slides ── */
+.deck { width: 100vw; height: 100vh; position: relative; }
+
+.slide {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 6vh 7vw;
+  opacity: 0;
+  transform: translateX(40px);
+  transition: opacity 0.5s ease, transform 0.5s ease;
+  pointer-events: none;
+  overflow: hidden;
+  font-size: clamp(14px, 1.15vw, 20px);
+}
+
+.slide.active { opacity: 1; transform: translateX(0); pointer-events: all; }
+.slide.prev { transform: translateX(-40px); }
+
+/* ── Chrome ── */
+.progress {
+  position: fixed;
+  top: 0; left: 0;
+  height: 4px; width: 0;
+  background: var(--bar-grad);
+  transition: width 0.4s ease;
+  z-index: 100;
+}
+
+.counter {
+  position: fixed;
+  bottom: 22px; right: 34px;
+  font-family: var(--font-head);
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--text-secondary);
+  z-index: 100;
+}
+
+.nav-hint {
+  position: fixed;
+  bottom: 22px; left: 34px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  opacity: 0.5;
+  z-index: 100;
+}
+
+/* ── Typo de base ── */
+h1, h2, h3, h4 { font-family: var(--font-head); }
+strong { font-weight: 700; color: var(--text); }
+em { font-style: italic; }
+
+
+/* ── Animations sobres ─────────────────────────────────────────
+   Objectif "fluide et beau", pas gadget. Trois mécanismes :
+   1. .reveal      → apparition en cascade des éléments d'une slide
+   2. [data-step]  → reveals incrémentaux (façon v-click)
+   3. .draw        → tracé progressif des traits SVG (schémas) */
+
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(16px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes scaleIn {
+  from { opacity: 0; transform: scale(0.96); }
+  to   { opacity: 1; transform: scale(1); }
+}
+@keyframes drawLine { to { stroke-dashoffset: 0; } }
+@keyframes softPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+
+/* 1. Reveal en cascade — l'index --i est posé par engine.js */
+.slide .reveal { opacity: 0; }
+.slide.active .reveal {
+  animation: fadeInUp 0.5s ease both;
+  animation-delay: calc(var(--i, 0) * 0.08s);
+}
+@media (prefers-reduced-motion: reduce) {
+  .slide .reveal, .pop { opacity: 1; }
+  .slide.active .reveal, .slide.active .pop, .slide.active .draw { animation: none; }
+  .draw { stroke-dashoffset: 0; }
+}
+
+/* 2. Reveals incrémentaux */
+[data-step] {
+  opacity: 0.18;
+  filter: saturate(0.4);
+  transition: opacity 0.45s ease, filter 0.45s ease, transform 0.45s ease;
+}
+[data-step].step-on { opacity: 1; filter: none; }
+
+/* 3. Tracé SVG progressif */
+.draw {
+  stroke-dasharray: var(--len, 600);
+  stroke-dashoffset: var(--len, 600);
+}
+.slide.active .draw {
+  animation: drawLine 1s ease forwards;
+  animation-delay: var(--draw-delay, 0.35s);
+}
+.slide.active .pop {
+  animation: scaleIn 0.5s ease both;
+  animation-delay: var(--pop-delay, 0.5s);
+}
+.pop { opacity: 0; }
+.slide.active .pulse { animation: softPulse 2s ease-in-out infinite; }
+
+
+/* ── Composants ────────────────────────────────────────────────
+   Tous neutres : ne consomment que les variables de tokens-*.css et
+   les couleurs sémantiques de base.css. Inspiré du deck CoreTechs. */
+
+/* ═══ Badges & eyebrows ═══ */
+.badge, .cover-badge {
+  display: inline-block;
+  align-self: flex-start;
+  padding: 7px 18px;
+  border: 2px solid var(--primary);
+  border-radius: 30px;
+  font-family: var(--font-head);
+  font-weight: 600;
+  font-size: 0.62em;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--primary);
+}
+.eyebrow {
+  display: block;
+  font-family: var(--font-head);
+  font-size: 0.78em;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--primary);
+  margin-bottom: 0.5em;
+}
+
+/* ═══ Slide : COVER ═══ */
+.slide-cover {
+  background: var(--cover-grad);
+  justify-content: center;
+  /* pas de position:relative — le .slide est déjà absolute (positionne les halos) */
+}
+.slide-cover::before {
+  content: '';
+  position: absolute;
+  top: -220px; right: -180px;
+  width: 720px; height: 720px;
+  background: radial-gradient(circle, var(--halo-1) 0%, transparent 70%);
+  border-radius: 50%;
+}
+.slide-cover::after {
+  content: '';
+  position: absolute;
+  bottom: -160px; left: -120px;
+  width: 480px; height: 480px;
+  background: radial-gradient(circle, var(--halo-2) 0%, transparent 70%);
+  border-radius: 50%;
+}
+.slide-cover > * { position: relative; z-index: 1; }
+.cover-title {
+  font-family: var(--font-head);
+  font-weight: 900;
+  font-size: 3.6em;
+  line-height: 1.04;
+  letter-spacing: -2px;
+  margin: 0.4em 0 0.3em;
+}
+.cover-title .grad, .grad-text {
+  background: var(--title-grad);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.cover-sub {
+  font-size: 1.25em;
+  color: var(--text-secondary);
+  font-weight: 400;
+  max-width: 22ch;
+}
+.cover-meta {
+  display: flex;
+  gap: 1.8em;
+  margin-top: 2.2em;
+  font-size: 0.8em;
+  color: var(--text-secondary);
+}
+.cover-meta > div { display: flex; align-items: center; gap: 0.5em; }
+
+/* ═══ Slide : SECTION / CHAPITRE ═══ */
+.slide-section {
+  background: var(--chapter-grad);
+  justify-content: center;
+  align-items: flex-start;
+  color: #fff;
+}
+.slide-section .chapter-num {
+  position: absolute;
+  top: 5%; right: 6%;
+  font-family: var(--font-head);
+  font-weight: 900;
+  font-size: 14em;
+  line-height: 1;
+  opacity: 0.14;
+  color: #fff;
+}
+.slide-section h2 {
+  font-size: 3em;
+  font-weight: 900;
+  letter-spacing: -1px;
+  color: #fff;
+  max-width: 18ch;
+  line-height: 1.08;
+}
+.slide-section .section-sub {
+  font-size: 1.2em;
+  opacity: 0.88;
+  margin-top: 0.6em;
+  max-width: 30ch;
+}
+
+/* ═══ Slide : CONTENU ═══ */
+.slide-content h2 {
+  font-size: 2.1em;
+  font-weight: 900;
+  letter-spacing: -0.5px;
+  line-height: 1.08;
+  margin-bottom: 0.7em;
+}
+.slide-content .lead {
+  font-size: 1.05em;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  max-width: 60ch;
+  margin-bottom: 0.4em;
+}
+.slide-content .lead + .lead { margin-top: 0.6em; }
+
+/* ═══ Grille de cartes ═══ */
+.cards { display: grid; gap: 1.1em; }
+.cards-2 { grid-template-columns: 1fr 1fr; }
+.cards-3 { grid-template-columns: repeat(3, 1fr); }
+.cards-4 { grid-template-columns: repeat(4, 1fr); }
+
+.card {
+  --cc: var(--primary);
+  --cc-soft: var(--c-primary-soft);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--cc);
+  border-radius: 14px;
+  padding: 1.2em 1.4em;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+.card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.09);
+}
+.card.primary { --cc: var(--primary);  --cc-soft: var(--c-primary-soft); }
+.card.red     { --cc: var(--c-red);    --cc-soft: var(--c-red-soft); }
+.card.orange  { --cc: var(--c-orange); --cc-soft: var(--c-orange-soft); }
+.card.green   { --cc: var(--c-green);  --cc-soft: var(--c-green-soft); }
+.card.teal    { --cc: var(--c-teal);   --cc-soft: var(--c-teal-soft); }
+.card.blue    { --cc: var(--c-blue);   --cc-soft: var(--c-blue-soft); }
+.card.purple  { --cc: var(--c-purple); --cc-soft: var(--c-purple-soft); }
+
+.card h3 {
+  font-size: 1.05em;
+  font-weight: 700;
+  margin-bottom: 0.35em;
+  color: var(--text);
+}
+.card p { font-size: 0.9em; line-height: 1.55; color: var(--text-secondary); margin: 0; }
+.card p + p { margin-top: 0.5em; }
+
+/* ═══ Tags ═══ */
+.tag {
+  display: inline-block;
+  padding: 0.2em 0.7em;
+  border-radius: 20px;
+  font-family: var(--font-head);
+  font-size: 0.62em;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  background: var(--cc-soft, var(--bg-secondary));
+  color: var(--cc, var(--primary));
+  margin-bottom: 0.7em;
+}
+
+/* ═══ Deux colonnes ═══ */
+.two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2.4em;
+  align-items: start;
+}
+.two-col .col-title {
+  font-size: 1.4em;
+  font-weight: 700;
+  color: var(--primary);
+  margin-bottom: 0.6em;
+}
+.two-col ul { list-style: none; }
+
+/* ═══ Listes à puces ═══ */
+.bullets { list-style: none; }
+.bullets li {
+  position: relative;
+  padding-left: 1.5em;
+  margin-bottom: 0.6em;
+  line-height: 1.5;
+  font-size: 0.98em;
+}
+.bullets li::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 0.55em;
+  width: 7px; height: 7px;
+  background: var(--primary);
+  border-radius: 2px;
+}
+
+/* ═══ Code ═══ */
+.slide code {
+  background: var(--bg-secondary);
+  color: var(--primary);
+  padding: 0.12em 0.4em;
+  border-radius: 5px;
+  font-size: 0.88em;
+  font-family: 'Fira Code', ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.slide pre {
+  background: #0f172a;
+  color: #e2e8f0;
+  border-radius: 12px;
+  padding: 1.1em 1.3em;
+  font-family: 'Fira Code', ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.74em;
+  line-height: 1.6;
+  overflow: auto;
+  box-shadow: 0 10px 26px rgba(15, 23, 42, 0.18);
+}
+.slide pre code { background: none; color: inherit; padding: 0; font-size: 1em; }
+
+/* ═══ Steps / chorégraphie ═══ */
+.steps { list-style: none; display: flex; flex-direction: column; gap: 0.7em; counter-reset: step; }
+.step {
+  display: flex;
+  align-items: flex-start;
+  gap: 1em;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0.85em 1.15em;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+.step-n {
+  flex-shrink: 0;
+  width: 34px; height: 34px;
+  border-radius: 50%;
+  background: var(--title-grad);
+  color: #fff;
+  font-family: var(--font-head);
+  font-weight: 700;
+  font-size: 0.9em;
+  display: flex; align-items: center; justify-content: center;
+}
+.step-t { font-weight: 700; font-size: 0.98em; }
+.step-d { font-size: 0.85em; color: var(--text-secondary); margin-top: 0.1em; }
+
+/* ═══ KPI ═══ */
+.kpi-row { display: flex; gap: 2.5em; justify-content: center; margin-bottom: 0.4em; }
+.kpi { text-align: center; }
+.kpi-v {
+  font-family: var(--font-head);
+  font-weight: 900;
+  font-size: 3em;
+  line-height: 1.05;
+  background: var(--title-grad);
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.kpi-l { font-size: 0.85em; color: var(--text-secondary); margin-top: 0.3em; max-width: 16ch; }
+
+/* ═══ Pipeline horizontal + tooltip ═══ */
+.flow { display: flex; align-items: center; flex-wrap: wrap; gap: 0.2em; }
+.flow-step {
+  position: relative;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.7em 1em;
+  text-align: center;
+  font-size: 0.85em;
+  font-weight: 500;
+  cursor: default;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+.flow-step:hover { transform: scale(1.06); box-shadow: 0 8px 22px rgba(0, 0, 0, 0.12); z-index: 5; }
+.flow-arrow { color: var(--primary); font-weight: 700; padding: 0 0.4em; }
+.flow-step .tooltip {
+  position: absolute;
+  bottom: calc(100% + 10px); left: 50%;
+  transform: translateX(-50%) scale(0.95);
+  background: var(--text); color: #fff;
+  padding: 0.6em 0.9em; border-radius: 9px;
+  font-size: 0.78em; font-weight: 400; line-height: 1.4;
+  width: 220px; opacity: 0; pointer-events: none;
+  transition: opacity 0.2s, transform 0.2s;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.22);
+}
+.flow-step:hover .tooltip { opacity: 1; transform: translateX(-50%) scale(1); }
+
+/* ═══ Quote / callout ═══ */
+.quote {
+  background: var(--bg-secondary);
+  border-left: 4px solid var(--primary);
+  padding: 1em 1.4em;
+  border-radius: 0 12px 12px 0;
+  font-size: 1.05em;
+  font-style: italic;
+  line-height: 1.6;
+}
+.live-badge {
+  display: inline-flex; align-items: center; gap: 0.5em;
+  background: var(--primary); color: #fff;
+  padding: 0.3em 0.9em; border-radius: 6px;
+  font-family: var(--font-head); font-weight: 700;
+  font-size: 0.72em; letter-spacing: 0.05em;
+}
+.live-badge .dot { width: 8px; height: 8px; border-radius: 50%; background: #fff; }
+
+/* ═══ Auteur ═══ */
+.author { display: flex; align-items: center; gap: 1.2em; margin-bottom: 1.2em; }
+.author img { width: 92px; height: 92px; border-radius: 50%; object-fit: cover; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.15); }
+.author .name { font-family: var(--font-head); font-weight: 800; font-size: 1.5em; }
+.author .role { color: var(--text-secondary); font-size: 0.95em; margin-top: 0.15em; }
+
+/* ═══ QR feedback ═══ */
+.qr { display: flex; flex-direction: column; align-items: center; gap: 0.6em; margin-top: 1.4em; }
+.qr img { width: 150px; height: 150px; border-radius: 12px; border: 1px solid var(--border); }
+.qr a { color: var(--primary); font-weight: 600; }
+
+/* ═══ Vidéo plein cadre ═══ */
+.slide-video { padding: 0; background: #000; }
+.slide-video video { width: 100%; height: 100%; object-fit: contain; }
+
+/* ═══ Schéma / SVG ═══ */
+.diagram { display: flex; justify-content: center; align-items: center; flex: 1; min-height: 0; }
+.diagram svg { max-width: 100%; max-height: 58vh; }
+.svg-label { font-family: var(--font-head); font-weight: 700; }
+
+/* ═══ Utilitaires ═══ */
+.center { text-align: center; }
+.center-x { align-items: center; text-align: center; }
+.muted { color: var(--text-secondary); }
+.mt { margin-top: 1em; }
+.mt-lg { margin-top: 1.8em; }
+.tagline { font-size: 1.6em; font-weight: 700; font-family: var(--font-head); margin-top: 0.8em; }
+.tagline .act { color: var(--primary-2); }
+.pay-line { font-size: 0.9em; color: var(--text-secondary); margin-top: 1em; }
+
+
+/* ── Spécifique au deck ── */
+.schema { width: min(740px, 92%); height: auto; }
+.schema text { fill: var(--text); }
+.schema .node-bg { fill: var(--bg-card); stroke: var(--border); stroke-width: 1.5; }
+.schema .node-primary { fill: var(--primary); }
+.schema .edge { stroke: var(--primary); stroke-width: 2.5; fill: none; }
+.schema .edge-label { fill: var(--text-secondary); font-size: 14px; font-family: var(--font-body); }
+.schema marker path { fill: var(--primary); }
+.demo-shot { max-height: 40vh; border-radius: 12px; border: 1px solid var(--border); box-shadow: 0 10px 28px rgba(0,0,0,.12); }
+</style>
+</head>
+<body>
+
+<div class="deck">
+
+  <!-- 1 · COVER -->
+  <section class="slide slide-cover">
+    <span class="badge reveal">Commerce agentique</span>
+    <h1 class="cover-title reveal">Quand votre IA<br><span class="grad">passe à la caisse</span></h1>
+    <p class="cover-sub reveal">MCP Remote &amp; UCP : comment un agent découvre un marchand et achète pour vous.</p>
+    <div class="cover-meta reveal">
+      <div>🗓 17 juin 2026</div>
+      <div>👤 Thomas Gruson — SFEIR</div>
+    </div>
+  </section>
+
+  <!-- 2 · TEASER VIDÉO -->
+  <section class="slide slide-video">
+    <video src="assets/teaser.mov" playsinline controls preload="metadata"></video>
+  </section>
+
+  <!-- 3 · QUI SUIS-JE -->
+  <section class="slide slide-content">
+    <h2 class="reveal">Qui suis-je&nbsp;?</h2>
+    <div class="author reveal">
+      <img src="assets/avatar.jpg" alt="Thomas Gruson">
+      <div>
+        <div class="name">Thomas Gruson</div>
+        <div class="role">SFEIR — Architecte Cloud, en mission chez Auchan e-commerce</div>
+      </div>
+    </div>
+    <ul class="bullets">
+      <li class="reveal"><strong>Architecte cloud</strong> au sein de la <strong>Platform Team</strong> e-commerce d'Auchan</li>
+      <li class="reveal"><strong>Passionné</strong> par la <strong>GenAI</strong></li>
+      <li class="reveal">Obsession du moment : MCP, agents autonomes, standards ouverts</li>
+      <li class="reveal">Ce talk s'appuie sur un <strong>POC réel</strong></li>
+    </ul>
+  </section>
+
+  <!-- 4 · SECTION : Le commerce agentique -->
+  <section class="slide slide-section">
+    <h2 class="reveal">Le commerce agentique</h2>
+    <p class="section-sub reveal">De quoi parle-t-on, au juste&nbsp;?</p>
+  </section>
+
+  <!-- 5 · C'est quoi pour moi (schéma animé) -->
+  <section class="slide slide-content center-x">
+    <h2 class="reveal">C'est quoi, pour moi&nbsp;?</h2>
+    <div class="diagram">
+      <svg class="schema" width="760" height="320" viewBox="0 0 760 320" role="img" aria-label="Vous déléguez à un agent IA qui agit chez le marchand">
+        <defs>
+          <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+            <path d="M0,0 L8,3 L0,6 Z" fill="var(--primary)"></path>
+          </marker>
+        </defs>
+        <!-- Vous -->
+        <g class="pop" style="--pop-delay:.2s">
+          <rect class="node-bg" x="20" y="120" width="130" height="80" rx="14"></rect>
+          <text x="85" y="155" text-anchor="middle" font-family="var(--font-head)" font-weight="800" font-size="20">Vous</text>
+          <text x="85" y="178" text-anchor="middle" class="edge-label">l'humain</text>
+        </g>
+        <!-- Vous → Agent -->
+        <path class="edge draw" style="--len:140;--draw-delay:.5s" d="M150,160 L285,160" marker-end="url(#arrow)"></path>
+        <text x="217" y="148" text-anchor="middle" class="edge-label pop" style="--pop-delay:.7s">délègue</text>
+        <!-- Agent IA -->
+        <g class="pop" style="--pop-delay:.9s">
+          <rect class="node-primary" x="290" y="105" width="170" height="110" rx="16"></rect>
+          <text x="375" y="150" text-anchor="middle" style="fill:#fff" font-family="var(--font-head)" font-weight="800" font-size="22">Agent IA</text>
+          <text x="375" y="180" text-anchor="middle" style="fill:rgba(255,255,255,.88)" font-size="14" font-family="var(--font-body)">agit en votre nom</text>
+        </g>
+        <!-- Agent → Marchand -->
+        <path class="edge draw" style="--len:150;--draw-delay:1.1s" d="M460,160 L600,160" marker-end="url(#arrow)"></path>
+        <text x="530" y="148" text-anchor="middle" class="edge-label pop" style="--pop-delay:1.3s">agit</text>
+        <!-- Marchand -->
+        <g class="pop" style="--pop-delay:1.5s">
+          <text x="685" y="95" text-anchor="middle" font-family="var(--font-head)" font-weight="800" font-size="18">Marchand</text>
+          <rect class="node-bg" x="610" y="110" width="150" height="34" rx="9"></rect>
+          <text x="685" y="132" text-anchor="middle" font-size="14">Catalogue</text>
+          <rect class="node-bg" x="610" y="150" width="150" height="34" rx="9"></rect>
+          <text x="685" y="172" text-anchor="middle" font-size="14">Panier</text>
+          <rect class="node-bg" x="610" y="190" width="150" height="34" rx="9"></rect>
+          <text x="685" y="212" text-anchor="middle" font-size="14">Paiement</text>
+        </g>
+      </svg>
+    </div>
+    <div class="tagline reveal"><strong>L'IA ne recommande plus.</strong> <span class="act">Elle agit.</span></div>
+  </section>
+
+  <!-- 6 · Le verrou -->
+  <section class="slide slide-content">
+    <h2 class="reveal">Le verrou du commerce agentique</h2>
+    <div class="cards cards-2">
+      <div class="card red reveal"><span class="tag">Problème</span><h3>La combinaison N × N</h3><p><strong>Chaque marchand</strong> câble une intégration sur mesure pour <strong>chaque agent IA</strong>.</p></div>
+      <div class="card orange reveal"><span class="tag">Friction</span><h3>Le parcours casse</h3><p>Les utilisateurs <em>cherchent</em> dans l'IA mais <em>achètent</em> ailleurs.</p></div>
+      <div class="card primary reveal"><span class="tag">Verrou 1</span><h3>La découverte des outils</h3><p>Comment un agent accède aux outils du marchand <strong>sans pré-configuration</strong> ? → MCP Remote</p></div>
+      <div class="card teal reveal"><span class="tag">Verrou 2</span><h3>La transaction</h3><p>Comment un agent <strong>achète</strong> chez le marchand de façon standard ? → UCP</p></div>
+    </div>
+  </section>
+
+  <!-- 7 · SECTION : MCP Remote -->
+  <section class="slide slide-section">
+    <div class="chapter-num">01</div>
+    <h2 class="reveal">MCP Remote : brancher l'agent</h2>
+    <p class="section-sub reveal">Découverte des outils sans pré-config.</p>
+  </section>
+
+  <!-- 8 · stdio vs Remote -->
+  <section class="slide slide-content">
+    <div class="two-col">
+      <div>
+        <div class="col-title reveal">stdio — l'origine</div>
+        <ul class="bullets">
+          <li class="reveal">Process local, pipe stdin/stdout</li>
+          <li class="reveal">Un seul utilisateur : <strong>toi, sur ta machine</strong></li>
+          <li class="reveal">Déclaré dans la config locale du client</li>
+          <li class="reveal">Auth ? <em>chacun son process</em></li>
+          <li class="reveal">Distribution = installer un binaire partout</li>
+        </ul>
+      </div>
+      <div>
+        <div class="col-title reveal">Remote — la suite</div>
+        <ul class="bullets">
+          <li class="reveal">Serveur HTTP, joignable par n'importe quel client</li>
+          <li class="reveal"><strong>N utilisateurs</strong> partagent le même endpoint</li>
+          <li class="reveal">Configuré par une simple <strong>URL</strong></li>
+          <li class="reveal">Transport unifié : <strong>Streamable HTTP</strong> sur <code>/mcp</code></li>
+          <li class="reveal">Auth ? <em>Indispensable</em> — sinon c'est open bar</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- 9 · Et pour l'Auth -->
+  <section class="slide slide-content">
+    <h2 class="reveal">Et pour l'Auth&nbsp;?</h2>
+    <div class="cards cards-2">
+      <div class="card red reveal"><span class="tag">Problème</span><h3>N agents × N serveurs</h3><p>Chaque agent IA devrait être <strong>pré-déclaré</strong> sur chaque serveur MCP.</p></div>
+      <div class="card orange reveal"><span class="tag">Friction</span><h3>L'ops manuelle</h3><p>Créer un client OAuth, partager un secret, le révoquer… pour <em>chaque</em> client.</p></div>
+      <div class="card teal reveal"><span class="tag">Solution</span><h3>Auto-discovery</h3><p>Le serveur MCP dit <strong>qui il est</strong> et <strong>où s'authentifier</strong>.</p></div>
+      <div class="card teal reveal"><span class="tag">Solution</span><h3>Auto-registration</h3><p>Le client se crée son propre <code>client_id</code>. Aucun humain dans la boucle.</p></div>
+    </div>
+  </section>
+
+  <!-- 10 · Ce serait bien -->
+  <section class="slide slide-content">
+    <h2 class="reveal">Ce serait bien…</h2>
+    <div class="cards cards-2">
+      <div class="card primary reveal"><span class="tag">Étape 1</span><h3>Une URL, c'est tout</h3><p>J'ajoute <code>https://&lt;mcp-serveur&gt;</code> comme serveur MCP à mon agent préféré.</p></div>
+      <div class="card teal reveal"><span class="tag">Étape 2</span><h3>Aucun pré-requis</h3><p>Pas de <code>client_id</code>, pas de <code>client_secret</code>, aucune config OAuth manuelle.</p></div>
+      <div class="card green reveal"><span class="tag">Étape 3</span><h3>OAuth s'ouvre tout seul</h3><p>Le navigateur s'ouvre, l'Authorization Server demande le consentement, je valide.</p></div>
+      <div class="card orange reveal"><span class="tag">Étape 4</span><h3>Les outils sont là</h3><p><code>search_products</code>, <code>cart_add</code>, <code>checkout</code>… utilisables dans la foulée.</p></div>
+    </div>
+  </section>
+
+  <!-- 11 · Les 3 RFC -->
+  <section class="slide slide-content">
+    <h2 class="reveal">Les 3 RFC qui résolvent ça</h2>
+    <div class="cards cards-3">
+      <div class="card primary reveal"><span class="tag">RFC 9728</span><h3>Protected Resource Metadata</h3><p><em>« Qui est mon Authorization Server ? »</em></p><p>Le serveur MCP publie l'AS à utiliser.</p></div>
+      <div class="card teal reveal"><span class="tag">RFC 8414</span><h3>Authorization Server Metadata</h3><p><em>« Comment je parle à l'AS ? »</em></p><p>L'AS publie ses endpoints et capacités.</p></div>
+      <div class="card green reveal"><span class="tag">RFC 7591</span><h3>Dynamic Client Registration</h3><p><em>« Comment j'obtiens un client_id ? »</em></p><p>Le client se crée lui-même par un POST.</p></div>
+    </div>
+    <p class="lead reveal mt">Ensemble, elles forment le <strong>protocole de découverte</strong> qui branche un client OAuth sur n'importe quel serveur protégé, sans pré-config.</p>
+  </section>
+
+  <!-- 12 · PRM -->
+  <section class="slide slide-content">
+    <h2 class="reveal">Protected Resource Metadata</h2>
+    <div class="two-col">
+      <div class="reveal">
+        <p class="lead"><strong>RFC 9728</strong> — exposée par le serveur MCP : <code>/.well-known/oauth-protected-resource</code></p>
+        <p class="lead">Publique, sans auth. Elle indique :</p>
+        <ul class="bullets">
+          <li>la <strong>ressource</strong> protégée</li>
+          <li>l'<strong>AS</strong> qui émet les tokens</li>
+          <li>les <strong>scopes</strong> supportés</li>
+        </ul>
+      </div>
+      <pre class="reveal"><code>{
+  "resource": "https://&lt;mcp-serveur&gt;",
+  "authorization_servers": [
+    "https://sso.exemple.fr/realms/customers"
+  ],
+  "scopes_supported": [
+    "openid", "profile",
+    "cart:read", "cart:write",
+    "order:write"
+  ],
+  "bearer_methods_supported": ["header"]
+}</code></pre>
+    </div>
+  </section>
+
+  <!-- 13 · AS Metadata -->
+  <section class="slide slide-content">
+    <h2 class="reveal">Authorization Server Metadata</h2>
+    <div class="two-col">
+      <div class="reveal">
+        <p class="lead"><strong>RFC 8414</strong> — exposée par l'AS : <code>/.well-known/oauth-authorization-server</code></p>
+        <p class="lead">L'AS publie ses endpoints OAuth :</p>
+        <ul class="bullets">
+          <li><code>authorization_endpoint</code></li>
+          <li><code>token_endpoint</code></li>
+          <li><code>registration_endpoint</code> ← <strong>DCR</strong></li>
+          <li><code>jwks_uri</code></li>
+        </ul>
+      </div>
+      <pre class="reveal"><code>{
+  "issuer": "https://sso.exemple.fr/realms/customers",
+  "authorization_endpoint":
+    ".../protocol/openid-connect/auth",
+  "token_endpoint":
+    ".../protocol/openid-connect/token",
+  "registration_endpoint":
+    ".../clients-registrations/openid-connect",
+  "jwks_uri":
+    ".../protocol/openid-connect/certs",
+  "code_challenge_methods_supported": ["S256"],
+  "grant_types_supported":
+    ["authorization_code", "refresh_token"]
+}</code></pre>
+    </div>
+  </section>
+
+  <!-- 14 · DCR -->
+  <section class="slide slide-content">
+    <h2 class="reveal">Dynamic Client Registration</h2>
+    <div class="two-col">
+      <div class="reveal">
+        <p class="lead"><strong>RFC 7591</strong> — un <code>POST</code> sur le <code>registration_endpoint</code>.</p>
+        <p class="lead">Le client déclare son <strong>nom</strong>, ses <strong>redirect URIs</strong>, ses <strong>grant types</strong>, ses <strong>scopes</strong>.</p>
+        <p class="lead">L'AS retourne un <code>client_id</code> dynamiquement émis.</p>
+        <p class="lead"><em>Flow sans humain, zéro pré-config.</em></p>
+      </div>
+      <pre class="reveal"><code>POST /clients-registrations/openid-connect
+
+{
+  "client_name": "Claude Desktop",
+  "redirect_uris": [
+    "claude://oauth/callback"
+  ],
+  "grant_types": [
+    "authorization_code",
+    "refresh_token"
+  ],
+  "token_endpoint_auth_method": "none",
+  "scope": "openid cart:read cart:write"
+}
+→ 201 Created
+{
+  "client_id": "claude-desktop-7a8e2f...",
+  "client_id_issued_at": 1747724400
+}</code></pre>
+    </div>
+  </section>
+
+  <!-- 15 · La chorégraphie (animée data-step) -->
+  <section class="slide slide-content">
+    <h2 class="reveal">La chorégraphie complète</h2>
+    <ol class="steps">
+      <li class="step" data-step="1"><span class="step-n">1</span><div><div class="step-t">POST /mcp → 401</div><div class="step-d">Le header WWW-Authenticate pointe vers le PRM</div></div></li>
+      <li class="step" data-step="2"><span class="step-n">2</span><div><div class="step-t">GET PRM</div><div class="step-d">Le client découvre AS et scopes (RFC 9728)</div></div></li>
+      <li class="step" data-step="3"><span class="step-n">3</span><div><div class="step-t">GET AS Metadata</div><div class="step-d">Endpoints OAuth récupérés (RFC 8414)</div></div></li>
+      <li class="step" data-step="4"><span class="step-n">4</span><div><div class="step-t">POST /register</div><div class="step-d">DCR : un client_id est émis (RFC 7591)</div></div></li>
+      <li class="step" data-step="5"><span class="step-n">5</span><div><div class="step-t">OAuth code + PKCE</div><div class="step-d">Consentement, token, premier tool call</div></div></li>
+    </ol>
+    <p class="muted text-sm reveal mt">→ pressez la flèche pour dérouler la chorégraphie étape par étape.</p>
+  </section>
+
+  <!-- 16 · Le piège aud -->
+  <section class="slide slide-content">
+    <div class="two-col">
+      <div>
+        <div class="col-title reveal">Le piège <code>aud</code></div>
+        <p class="lead reveal">Le réflexe OAuth : <code>aud = client_id</code>.</p>
+        <p class="lead reveal">Mais avec le DCR, chaque client a un <code>client_id</code> <strong>différent</strong> — la validation casse.</p>
+        <p class="lead reveal">La spec MCP impose <strong>RFC 8707</strong> :</p>
+        <ul class="bullets">
+          <li class="reveal">le client envoie <code>resource=&lt;url MCP&gt;</code></li>
+          <li class="reveal">l'AS émet <code>aud = url MCP</code></li>
+          <li class="reveal">tous les clients partagent la <strong>même</strong> <code>aud</code></li>
+        </ul>
+      </div>
+      <div>
+        <div class="col-title reveal">La bonne pratique</div>
+        <pre class="reveal"><code>POST /authorize
+  ?client_id=claude-code-7a8e...
+  &amp;resource=https://&lt;mcp-serveur&gt;
+  &amp;code_challenge=...
+
+→ Token émis avec :
+{
+  "iss": "https://sso.marchand.fr/realms/customers",
+  "aud": "&lt;mcp-serveur&gt;",
+  "scope": "cart:read cart:write"
+}</code></pre>
+        <p class="lead reveal">Côté gateway : <code>jwtVerify(token, jwks, { issuer, audience })</code>.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 17 · DÉMO → récap statique partageable -->
+  <section class="slide slide-content">
+    <h2 class="reveal">Démo — Les courses chez Auchan</h2>
+    <p class="lead reveal"><span class="live-badge"><span class="dot pulse"></span>REJOUÉE EN LIVE</span>&nbsp;&nbsp;Ce que la démo montrait, étape par étape :</p>
+    <div class="two-col mt">
+      <ol class="steps reveal">
+        <li class="step"><span class="step-n">1</span><div><div class="step-t">Ajout du serveur dans Claude Desktop</div><div class="step-d">Une seule URL, rien de plus</div></div></li>
+        <li class="step"><span class="step-n">2</span><div><div class="step-t">401 → PRM → DCR</div><div class="step-d">Invisible : la chorégraphie se joue toute seule</div></div></li>
+        <li class="step"><span class="step-n">3</span><div><div class="step-t">OAuth + consentement</div><div class="step-d">Le seul moment avec intervention humaine</div></div></li>
+        <li class="step"><span class="step-n">4</span><div><div class="step-t">Les outils Auchan apparaissent</div><div class="step-d">search, cart, get_slots, checkout</div></div></li>
+        <li class="step"><span class="step-n">5</span><div><div class="step-t">Faire les courses en langage naturel</div><div class="step-d">Direction le lien de paiement</div></div></li>
+      </ol>
+      <div class="center reveal">
+        <img class="demo-shot" src="assets/lien-de-paiement.png" alt="Lien de paiement généré par l'agent">
+        <p class="muted text-sm mt">Résultat : un lien de paiement, généré par l'agent.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 18 · Architecture du POC -->
+  <section class="slide slide-content">
+    <h2 class="reveal">L'architecture du POC</h2>
+    <div class="cards cards-2">
+      <div class="card teal reveal"><span class="tag">Gateway</span><h3>Hono + TypeScript</h3><p>Stateless, sur GKE. Sert le MCP <em>et</em> le PRM <em>et</em> proxy REST.</p></div>
+      <div class="card primary reveal"><span class="tag">AS</span><h3>Keycloak — realm</h3><p>L'AS existant. Ajout d'une policy DCR et de scopes.</p></div>
+      <div class="card green reveal"><span class="tag">Backends</span><h3>~30 microservices e-commerce</h3><p>Le catalogue, le panier, les wishlists, les magasins, le checkout réels.</p></div>
+      <div class="card orange reveal"><span class="tag">Clients</span><h3>Claude Desktop, Code, Cursor</h3><p>N'importe quel client MCP HTTP. Et demain : un plugin grand public.</p></div>
+    </div>
+  </section>
+
+  <!-- 19 · Plugins grand public -->
+  <section class="slide slide-content">
+    <h2 class="reveal">Des plugins grand public</h2>
+    <div class="cards cards-2">
+      <div class="card primary reveal"><span class="tag">OpenAI</span><h3>ChatGPT Apps SDK</h3><p>Une app ChatGPT, c'est un <strong>serveur MCP remote</strong>. Publiée, elle touche le grand public.</p></div>
+      <div class="card teal reveal"><span class="tag">Anthropic</span><h3>Claude Connectors</h3><p>Un <em>custom connector</em> = une URL de serveur MCP remote. Référencé dans le Directory de Claude.</p></div>
+      <div class="card green reveal"><span class="tag">Le même artefact</span><h3>Build once</h3><p>Le serveur de la démo, je le publie tel quel — aucun re-développement.</p></div>
+      <div class="card orange reveal"><span class="tag">Flow auto</span><h3>Le DCR zero-touch</h3><p>Chaque utilisateur devient un client OAuth <strong>sans pré-déclaration</strong>. C'est ça, le passage à l'échelle.</p></div>
+    </div>
+  </section>
+
+  <!-- 20 · DCR aujourd'hui et la suite -->
+  <section class="slide slide-content">
+    <h2 class="reveal">DCR aujourd'hui — et déjà la suite</h2>
+    <p class="lead reveal">Le <strong>DCR fait tourner le MCP authentifié en production aujourd'hui</strong>. Trois limites connues, déjà adressées :</p>
+    <div class="cards cards-3 mt">
+      <div class="card teal reveal"><span class="tag">Limite 1</span><h3>client_id</h3><p>Chaque client crée son <code>client_id</code> : <strong>l'AS accumule des enregistrements</strong>, sans fin.</p></div>
+      <div class="card teal reveal"><span class="tag">Limite 2</span><h3>cycle de vie</h3><p><strong>Rien ne fait expirer ni ne révoque</strong> les enregistrements obsolètes.</p></div>
+      <div class="card teal reveal"><span class="tag">Limite 3</span><h3>Identité</h3><p>Le client déclare un nom ; <strong>rien ne garantit qu'il est bien qui il prétend</strong>.</p></div>
+    </div>
+    <p class="lead center reveal mt">Et ça bouge vite : <strong>SEP-991</strong> (juil. 2025), draft <strong>adopté par l'IETF OAuth WG</strong> (oct. 2025), <strong>CIMD</strong> recommandé par défaut dans la spec MCP de nov. 2025.</p>
+  </section>
+
+  <!-- 21 · CIMD -->
+  <section class="slide slide-content">
+    <h2 class="reveal">Client ID Metadata Document</h2>
+    <div class="two-col">
+      <div class="reveal">
+        <p class="lead">Le <code>client_id</code> <em>est</em> une URL HTTPS qui pointe un JSON public décrivant le client.</p>
+        <ul class="bullets">
+          <li>L'AS fetch le document — <strong>zéro enregistrement, zéro stockage</strong></li>
+          <li>L'origine de l'URL <strong>prouve</strong> l'identité du client</li>
+          <li>MCP (<strong>SEP-991</strong>) : CIMD en défaut, DCR en option</li>
+        </ul>
+        <p class="lead">Déjà supporté : <strong>Keycloak, Auth0, WorkOS, Authlete</strong>.</p>
+      </div>
+      <pre class="reveal"><code>{
+  "client_id":
+    "https://claude.ai/.well-known/oauth-client",
+  "client_name": "Claude",
+  "redirect_uris": [
+    "https://claude.ai/oauth/callback"
+  ],
+  "grant_types": [
+    "authorization_code", "refresh_token"
+  ],
+  "token_endpoint_auth_method": "none"
+}</code></pre>
+    </div>
+  </section>
+
+  <!-- 22 · SECTION : UCP -->
+  <section class="slide slide-section">
+    <div class="chapter-num">02</div>
+    <h2 class="reveal">UCP — et demain, le standard&nbsp;?</h2>
+    <p class="section-sub reveal">La transaction, standardisée.</p>
+  </section>
+
+  <!-- 23 · Qui a lancé UCP -->
+  <section class="slide slide-content">
+    <h2 class="reveal">Qui a lancé UCP&nbsp;?</h2>
+    <div class="cards cards-2">
+      <div class="card primary reveal"><span class="tag">Initiateur</span><h3>Google</h3><p>Annonce officielle le <strong>11 janvier 2026</strong> sur le Google Developers Blog.</p></div>
+      <div class="card teal reveal"><span class="tag">Co-développeurs</span><h3>Shopping Market</h3><p><strong>Shopify, Etsy, Wayfair, Target, Walmart</strong> — co-design dès l'origine.</p></div>
+      <div class="card teal reveal"><span class="tag">Élargissement</span><h3>20+ endorsers</h3><p>Distributeurs, plateformes e-commerce et acteurs du paiement ont rejoint la spec.</p></div>
+      <div class="card green reveal"><span class="tag">Gouvernance</span><h3>Open standard</h3><p>Spec publique sur <code>ucp.dev</code>, code de référence sur GitHub.</p></div>
+    </div>
+  </section>
+
+  <!-- 24 · Pourquoi UCP -->
+  <section class="slide slide-content">
+    <h2 class="reveal">Pourquoi UCP&nbsp;?</h2>
+    <div class="cards cards-2">
+      <div class="card red reveal"><span class="tag">Problème</span><h3>Intégration</h3><p>Chaque marchand devait builder une intégration sur mesure pour optimiser <strong>l'interaction de l'agent IA</strong>.</p></div>
+      <div class="card orange reveal"><span class="tag">Friction</span><h3>Du chat au paiement</h3><p>Les utilisateurs <em>recherchent</em> dans les IA mais <em>achètent</em> ailleurs — le parcours casse.</p></div>
+      <div class="card teal reveal"><span class="tag">Solution</span><h3>Un standard ouvert</h3><p>Exposer ses capacités <strong>une fois</strong>, consommé par tous les agents.</p></div>
+      <div class="card green reveal"><span class="tag">Promesse</span><h3>Instant sales</h3><p><em>« Turn AI interactions into instant sales »</em> — Google Developers Blog.</p></div>
+    </div>
+  </section>
+
+  <!-- 25 · Adoption multi-industries -->
+  <section class="slide slide-content">
+    <h2 class="reveal">Une adoption multi-industries</h2>
+    <p class="lead reveal">D'abord le retail ; depuis Google Marketing Live 2026, aussi l'<strong>hôtellerie</strong> et la <strong>livraison de repas</strong>.</p>
+    <div class="cards cards-3 mt">
+      <div class="card primary reveal"><span class="tag">Retail</span><h3>Distribution &amp; e-commerce</h3><p>Walmart, Target, Best Buy, The Home Depot, Macy's, Zalando.</p></div>
+      <div class="card teal reveal"><span class="tag">Hôtellerie</span><h3>Voyage &amp; hôtels</h3><p>Booking.com, Expedia, Hilton, Marriott, Accor, Amadeus.</p></div>
+      <div class="card orange reveal"><span class="tag">Food</span><h3>Livraison de repas</h3><p>DoorDash, Uber Eats, Square, Toast.</p></div>
+    </div>
+    <p class="pay-line center reveal">Côté paiement : Visa, Mastercard, American Express, Stripe, Adyen, Affirm, Klarna.</p>
+  </section>
+
+  <!-- 26 · Surfaces agentiques -->
+  <section class="slide slide-content">
+    <h2 class="reveal">Cible : les surfaces agentiques</h2>
+    <div class="cards cards-2">
+      <div class="card primary reveal"><span class="tag">Aujourd'hui</span><h3>Google Search · AI Mode</h3><p>L'agent peut conclure l'achat <strong>sans quitter Search</strong>.</p></div>
+      <div class="card primary reveal"><span class="tag">Aujourd'hui</span><h3>Gemini app &amp; web</h3><p>L'utilisateur demande à Gemini d'acheter — la transaction se fait via UCP chez le marchand.</p></div>
+      <div class="card teal reveal"><span class="tag">Demain</span><h3>N'importe quel agent</h3><p>Tout client qui parle UCP consomme le profile : ChatGPT, Claude, agents custom…</p></div>
+      <div class="card green reveal"><span class="tag">Marchand</span><h3>Reste Merchant of Record</h3><p><em>« Full ownership of customer relationships, data, and the post-purchase experience. »</em></p></div>
+    </div>
+  </section>
+
+  <!-- 27 · /.well-known/ucp -->
+  <section class="slide slide-content">
+    <h2 class="reveal"><code>/.well-known/ucp</code></h2>
+    <div class="two-col">
+      <div class="reveal">
+        <p class="lead">L'agent veut savoir <strong>ce que le marchand sait faire</strong> → un <code>GET</code> sur <code>/.well-known/ucp</code>.</p>
+        <p class="lead">Comme A2A a son <strong>AgentCard</strong>, UCP a son <strong>UCP profile</strong> :</p>
+        <ul class="bullets">
+          <li>Public, sans auth, JSON standardisé</li>
+          <li>Déclare services, capabilities, payment handlers</li>
+          <li>Sert de base à la <em>negotiation</em></li>
+        </ul>
+      </div>
+      <pre class="reveal"><code>{
+  "ucp": {
+    "version": "2026-01-23",
+    "services": {
+      "dev.ucp.shopping": { "rest": { "url": "/ucp" } }
+    },
+    "capabilities": {
+      "dev.ucp.shopping.checkout": {
+        "version": "2026-01-23",
+        "spec": "https://ucp.dev/specs/checkout"
+      },
+      "dev.ucp.shopping.fulfillment": {
+        "extends": "dev.ucp.shopping.checkout"
+      }
+    },
+    "payment_handlers": { "com.google.pay": {} }
+  },
+  "signing_keys": ["..."]
+}</code></pre>
+    </div>
+  </section>
+
+  <!-- 28 · Service REST vs MCP -->
+  <section class="slide slide-content">
+    <div class="two-col">
+      <div>
+        <div class="col-title reveal">Service REST</div>
+        <p class="lead reveal">Opérations CRUD sur une <strong>checkout session</strong> :</p>
+        <pre class="reveal"><code>POST   /checkout              # create
+GET    /checkout/{id}         # read
+PUT    /checkout/{id}         # update
+POST   /checkout/{id}/complete
+POST   /checkout/{id}/cancel</code></pre>
+        <ul class="bullets">
+          <li class="reveal"><strong>Stateful</strong> par défaut : la session vit côté serveur</li>
+          <li class="reveal"><strong>Stateless + redirect</strong> : en option</li>
+          <li class="reveal">HTTPS + TLS 1.3 · <code>Request-Signature</code>, <code>Idempotency-Key</code></li>
+        </ul>
+      </div>
+      <div>
+        <div class="col-title reveal">Service MCP</div>
+        <p class="lead reveal">Le même contrat, exposé en <strong>MCP binding</strong> :</p>
+        <ul class="bullets">
+          <li class="reveal">Pour les plateformes déjà serveur MCP</li>
+          <li class="reveal">Tools = capabilities</li>
+          <li class="reveal">Mêmes schémas, transport différent</li>
+          <li class="reveal">Co-existe avec REST sur le même profile</li>
+        </ul>
+        <p class="lead reveal"><strong>Le pont avec la 1ʳᵉ partie</strong> : le serveur MCP de la démo pourrait porter un binding UCP.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 29 · Capabilities découverte & panier -->
+  <section class="slide slide-content">
+    <h2 class="reveal">Capabilities — découverte &amp; panier</h2>
+    <div class="cards cards-2">
+      <div class="card primary reveal"><span class="tag">catalog</span><h3>Catalogue</h3><p>Full-text + filtres : l'agent interroge le catalogue temps réel du marchand.</p></div>
+      <div class="card primary reveal"><span class="tag">catalog</span><h3>Produits</h3><p>Lookup d'un produit ou d'une variante : prix, stock, options à jour.</p></div>
+      <div class="card teal reveal"><span class="tag">cart</span><h3>Panier</h3><p>L'agent assemble un panier multi-items avant le checkout.</p></div>
+      <div class="card green reveal"><span class="tag">Identity Linking</span><h3>Lien d'identité</h3><p>OAuth 2.0 : rattache le compte client — prix membre, fidélité, livraison.</p></div>
+    </div>
+  </section>
+
+  <!-- 30 · Capabilities checkout -->
+  <section class="slide slide-content">
+    <h2 class="reveal">Capabilities — checkout</h2>
+    <div class="cards cards-2">
+      <div class="card primary reveal"><span class="tag">checkout</span><h3>Tunnel d'achat</h3><p>Session <strong>stateful</strong> par défaut : create / update / complete. Mode <strong>stateless + redirect</strong> en option.</p></div>
+      <div class="card teal reveal"><span class="tag">order</span><h3>Suivi des commandes</h3><p>État de la commande, retours, webhooks signés vers la plateforme.</p></div>
+      <div class="card orange reveal"><span class="tag">discount</span><h3>Promos &amp; remises</h3><p><code>extends</code> checkout. Application et validation des discounts.</p></div>
+      <div class="card green reveal"><span class="tag">fulfillment</span><h3>Livraison &amp; retrait</h3><p><code>extends</code> checkout. Shipping, click &amp; collect, créneaux, split shipments.</p></div>
+    </div>
+  </section>
+
+  <!-- 31 · Extensible par design -->
+  <section class="slide slide-content">
+    <h2 class="reveal">Extensible par design</h2>
+    <div class="two-col">
+      <div class="reveal">
+        <p class="lead">UCP est un <strong>protocole de couches</strong> :</p>
+        <ol class="steps">
+          <li class="step"><span class="step-n">1</span><div><div class="step-t">Service</div><div class="step-d">Le cœur (dev.ucp.shopping)</div></div></li>
+          <li class="step"><span class="step-n">2</span><div><div class="step-t">Capability</div><div class="step-d">Une fonction (checkout, order…)</div></div></li>
+          <li class="step"><span class="step-n">3</span><div><div class="step-t">Extension</div><div class="step-d">Votre spécificité métier</div></div></li>
+        </ol>
+      </div>
+      <div class="reveal">
+        <p class="lead">Les extensions suivent le <strong>reverse-domain naming</strong> — comme un package Java.</p>
+        <pre><code>{
+  "name": "com.auchan.fidelite.points",
+  "extends": "dev.ucp.shopping.checkout",
+  "version": "2026-05-01",
+  "schema": "https://auchan.fr/ucp/fidelite.json"
+}</code></pre>
+        <p class="lead">Votre extension <em>étend</em> une capability standard sans la casser.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 32 · Flow d'achat (animé) -->
+  <section class="slide slide-content">
+    <h2 class="reveal">Le flow d'achat de bout en bout</h2>
+    <ol class="steps">
+      <li class="step" data-step="1"><span class="step-n">1</span><div><div class="step-t">Discovery</div><div class="step-d">Fetch de /.well-known/ucp et négociation des capabilities</div></div></li>
+      <li class="step" data-step="2"><span class="step-n">2</span><div><div class="step-t">Catalog</div><div class="step-d">Recherche et lookup produits : variants, stock, prix</div></div></li>
+      <li class="step" data-step="3"><span class="step-n">3</span><div><div class="step-t">Cart &amp; checkout</div><div class="step-d">Construction du panier puis création de la session</div></div></li>
+      <li class="step" data-step="4"><span class="step-n">4</span><div><div class="step-t">Complete</div><div class="step-d">Payment token, ou redirect en mode stateless</div></div></li>
+      <li class="step" data-step="5"><span class="step-n">5</span><div><div class="step-t">Webhook</div><div class="step-d">Le marchand notifie les order updates signés</div></div></li>
+    </ol>
+    <p class="muted text-sm reveal mt">Le marchand reste <strong>Merchant of Record</strong> — relation client, données, SAV.</p>
+  </section>
+
+  <!-- 33 · Déploiement -->
+  <section class="slide slide-content center-x">
+    <h2 class="reveal">Où en est le déploiement&nbsp;?</h2>
+    <div class="kpi-row reveal mt">
+      <div class="kpi"><div class="kpi-v">US</div><div class="kpi-l">disponible aujourd'hui</div></div>
+      <div class="kpi"><div class="kpi-v">+3</div><div class="kpi-l">Canada, Australie, UK — GML 2026</div></div>
+    </div>
+    <div class="cards cards-2 mt" style="max-width:880px">
+      <div class="card orange reveal"><span class="tag">Aujourd'hui</span><h3>Lancé aux US</h3><p>Marchands américains éligibles. Surfaces : AI Mode dans Search + l'app Gemini.</p></div>
+      <div class="card teal reveal"><span class="tag">Chez Auchan</span><h3>Pas encore exposé</h3><p>UCP n'est pas en prod — c'est de la veille. Mais la spec publique permet de prototyper un <code>/.well-known/ucp</code> dès aujourd'hui.</p></div>
+    </div>
+  </section>
+
+  <!-- 34 · À retenir -->
+  <section class="slide slide-content">
+    <h2 class="reveal">À retenir</h2>
+    <div class="cards cards-3">
+      <div class="card primary reveal"><span class="tag">1</span><h3>MCP Remote, c'est maintenant</h3><p><strong>MCP Remote + DCR</strong> = serveur consommable par tous les agents, utilisable aujourd'hui : <strong>c'est prod live</strong>.</p></div>
+      <div class="card teal reveal"><span class="tag">2</span><h3>3 RFC, et ça continue</h3><p><strong>PRM</strong> (9728) + <strong>AS Metadata</strong> (8414) + <strong>DCR</strong> (7591). <strong>CIMD</strong> à venir.</p></div>
+      <div class="card green reveal"><span class="tag">3</span><h3>UCP, le pattern qui vient</h3><p>Pas encore en prod : c'est la carte de visite du marchand. Comprenez-le avant qu'il arrive.</p></div>
+    </div>
+    <p class="lead center reveal mt">📚 <code>modelcontextprotocol.io</code> · <code>RFC 9728 · 8414 · 7591 · 8707</code> · <code>ucp.dev</code></p>
+  </section>
+
+  <!-- 35 · MERCI -->
+  <section class="slide slide-cover center-x">
+    <h1 class="cover-title reveal">Merci&nbsp;!</h1>
+    <p class="cover-sub reveal" style="max-width:none">Questions ? Envie d'en discuter ?</p>
+    <div class="qr reveal">
+      <img src="assets/qrcode-feedback.png" alt="QR code feedback">
+      <a href="https://openfeedback.io/q3aGs0OJvs8m4wlLxqwr" target="_blank" rel="noopener">Votre feedback !</a>
+    </div>
+  </section>
+
+</div>
+
+<div class="progress" id="progress"></div>
+<div class="counter" id="counter"></div>
+<div class="nav-hint">← → pour naviguer</div>
+
+<script>/* ── Moteur de présentation (vanilla, zéro dépendance) ─────────
+   Navigation clavier/tactile, barre de progression, compteur,
+   reveal en cascade, reveals incrémentaux [data-step]. */
+(function () {
+  var slides = Array.prototype.slice.call(document.querySelectorAll('.slide'));
+  var progress = document.getElementById('progress');
+  var counter = document.getElementById('counter');
+  if (!slides.length) return;
+
+  var current = 0;
+  var step = 0;
+  var maxStep = 0;
+
+  function stepEls(slide) {
+    return Array.prototype.slice.call(slide.querySelectorAll('[data-step]'));
+  }
+  function computeMaxStep(slide) {
+    return stepEls(slide).reduce(function (m, el) {
+      return Math.max(m, parseInt(el.getAttribute('data-step'), 10) || 0);
+    }, 0);
+  }
+  function applySteps(slide, upto) {
+    stepEls(slide).forEach(function (el) {
+      var s = parseInt(el.getAttribute('data-step'), 10) || 0;
+      el.classList.toggle('step-on', s <= upto);
+    });
+  }
+  function indexReveals(slide) {
+    slide.querySelectorAll('.reveal').forEach(function (el, i) {
+      el.style.setProperty('--i', i);
+    });
+  }
+
+  function render() {
+    slides.forEach(function (s, i) {
+      s.classList.toggle('active', i === current);
+      s.classList.toggle('prev', i < current);
+    });
+    if (progress) progress.style.width = (current / (slides.length - 1) * 100) + '%';
+    if (counter) counter.textContent = (current + 1) + ' / ' + slides.length;
+    if (location.hash !== '#' + (current + 1)) {
+      history.replaceState(null, '', '#' + (current + 1));
+    }
+  }
+
+  function go(n, toEnd) {
+    if (n < 0 || n >= slides.length) return;
+    current = n;
+    var slide = slides[current];
+    indexReveals(slide);
+    maxStep = computeMaxStep(slide);
+    step = toEnd ? maxStep : 0;
+    applySteps(slide, step);
+    render();
+  }
+
+  function next() {
+    if (step < maxStep) { step++; applySteps(slides[current], step); return; }
+    go(current + 1);
+  }
+  function prev() {
+    if (step > 0) { step--; applySteps(slides[current], step); return; }
+    go(current - 1, true);
+  }
+
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') { e.preventDefault(); next(); }
+    else if (e.key === 'ArrowLeft' || e.key === 'PageUp') { e.preventDefault(); prev(); }
+    else if (e.key === 'Home') { e.preventDefault(); go(0); }
+    else if (e.key === 'End') { e.preventDefault(); go(slides.length - 1, true); }
+  });
+
+  var touchX = 0;
+  document.addEventListener('touchstart', function (e) { touchX = e.touches[0].clientX; }, { passive: true });
+  document.addEventListener('touchend', function (e) {
+    var d = touchX - e.changedTouches[0].clientX;
+    if (Math.abs(d) > 50) { d > 0 ? next() : prev(); }
+  });
+
+  // Deep-link : #N ouvre directement la slide N
+  var start = parseInt((location.hash || '').replace('#', ''), 10);
+  go(start > 0 && start <= slides.length ? start - 1 : 0);
+})();
+</script>
+
+</body>
+</html>
